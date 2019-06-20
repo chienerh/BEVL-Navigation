@@ -1,0 +1,4 @@
+[submodule "pysot"]
+	path = pysot
+	url = https://github.com/chienerh/pysot.git
+	branch = master
