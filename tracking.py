@@ -27,9 +27,9 @@ torch.set_num_threads(1)
 def parse_args():
     parser = argparse.ArgumentParser(description='tracking demo')
     parser.add_argument('--config', type=str, help='config file',
-                        default='pysot/experiments/siamrpn_r50_l234_dwxcorr/config.yaml')
+                        default='pysot/experiments/siamrpn_alex_dwxcorr/config.yaml')
     parser.add_argument('--snapshot', type=str, help='model name',
-                        default='pysot/experiments/siamrpn_r50_l234_dwxcorr/model.pth')
+                        default='pysot/experiments/siamrpn_alex_dwxcorr/model.pth')
     parser.add_argument('--video_name', default='data/EPSON/20190214_clip/20190214_trim.mp4', type=str,
                         help='videos or image files')
     parser.add_argument('--net_type', type=str, help='model name',
@@ -126,7 +126,7 @@ class FrameReader(object):
     def iter_next(self):
         if isinstance(self.frame_iter, cv2.VideoCapture):
             ret, frame = self.frame_iter.read()
-            print(f"FPS: {self.frame_iter.get(cv2.CAP_PROP_FPS)}")
+            # print(f"FPS: {self.frame_iter.get(cv2.CAP_PROP_FPS)}")
             if not ret:
                 raise StopIteration
             return frame
@@ -154,7 +154,7 @@ def show_result(frame, bbox):
     cv2.rectangle(frame_showing, (bbox[0], bbox[1]),
                   (bbox[0] + bbox[2], bbox[1] + bbox[3]),
                   (0, 255, 0), 3)
-    x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), min(int(bbox[0] + bbox[2]), frame.shape[1]), min(
+    x1, y1, x2, y2 = max(int(bbox[0]), 0), max(int(bbox[1]), 0), min(int(bbox[0] + bbox[2]), frame.shape[1]), min(
         int(bbox[1] + bbox[3]), frame.shape[0])
     frame_output = np.zeros_like(frame)
     frame_output[y1:y2, x1:x2] = 255
@@ -213,7 +213,8 @@ def main():
                 mask = ((outputs['mask'] > cfg.TRACK.MASK_THERSHOLD) * 255)
                 mask = mask.astype(np.uint8)
                 mask = np.stack([mask, mask * 255, mask]).transpose(1, 2, 0)
-                final_frame = cv2.addWeighted(frame, 0.77, mask, 0.23, -1)
+                frame_showing = cv2.addWeighted(frame, 0.77, mask, 0.23, -1)
+                final_frame = cv2.hconcat((frame, frame_showing))
             else:
                 bbox = list(map(int, outputs['bbox']))
                 final_frame = show_result(frame, bbox)
@@ -226,7 +227,7 @@ def main():
             break  # esc to quit
 
         stat_time.append(time.time() - cur_time)
-        print('iteration time = ', time.time() - cur_time)
+        # print('iteration time = ', time.time() - cur_time)
     print('average iteration time =', np.average(stat_time))
 
 
