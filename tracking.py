@@ -149,6 +149,19 @@ class FrameReader(object):
                                      key=lambda x: int(x.split('/')[-1].split('.')[0]))
 
 
+def show_result(frame, bbox):
+    frame_showing = frame.copy()
+    cv2.rectangle(frame_showing, (bbox[0], bbox[1]),
+                  (bbox[0] + bbox[2], bbox[1] + bbox[3]),
+                  (0, 255, 0), 3)
+    x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), min(int(bbox[0] + bbox[2]), frame.shape[1]), min(
+        int(bbox[1] + bbox[3]), frame.shape[0])
+    frame_output = np.zeros_like(frame)
+    frame_output[y1:y2, x1:x2] = 255
+    final_frame = cv2.hconcat((frame_output, frame_showing))
+    return final_frame
+
+
 def main():
     args = parse_args()
 
@@ -183,13 +196,15 @@ def main():
     tracker.init(frame, boxes[0])
 
     for frame in frame_reader:
+        cur_time = time.time()
         boxes = do_object_detection(frame, predictor, class_names)
         # Object detected
         if boxes.size(0) > 0:
             boxes = boxes.detach().cpu().numpy()
-            tracker.init(frame, boxes[0])
+            bbox = [boxes[0, 0], boxes[0, 1], boxes[0, 2] - boxes[0, 0], boxes[0, 3] - boxes[0, 1]]
+            tracker.init(frame, bbox)
+            final_frame = show_result(frame, bbox)
         else:
-            cur_time = time.time()
             outputs = tracker.track(frame)
             if 'polygon' in outputs:
                 polygon = np.array(outputs['polygon']).astype(np.int32)
@@ -201,24 +216,17 @@ def main():
                 final_frame = cv2.addWeighted(frame, 0.77, mask, 0.23, -1)
             else:
                 bbox = list(map(int, outputs['bbox']))
-                frame_showing = frame.copy()
-                cv2.rectangle(frame_showing, (bbox[0], bbox[1]),
-                              (bbox[0] + bbox[2], bbox[1] + bbox[3]),
-                              (0, 255, 0), 3)
-                x1, y1, x2, y2 = bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]
-                frame_output = np.zeros_like(frame)
-                frame_output[y1:y2, x1:x2] = 255
-                final_frame = cv2.hconcat((frame_output, frame_showing))
+                final_frame = show_result(frame, bbox)
 
-            cv2.imshow(video_name, final_frame)
-            keyPressed = cv2.waitKey(1) & 0xff
+        cv2.imshow(video_name, final_frame)
+        keyPressed = cv2.waitKey(1) & 0xff
 
-            if keyPressed == 27 or keyPressed == 1048603:
-                print('exited the program by pressing ESC')
-                break  # esc to quit
+        if keyPressed == 27 or keyPressed == 1048603:
+            print('exited the program by pressing ESC')
+            break  # esc to quit
 
-            stat_time.append(time.time() - cur_time)
-            print('iteration time = ', time.time() - cur_time)
+        stat_time.append(time.time() - cur_time)
+        print('iteration time = ', time.time() - cur_time)
     print('average iteration time =', np.average(stat_time))
 
 
