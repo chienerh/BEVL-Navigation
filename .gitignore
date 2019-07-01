@@ -1,2 +1,4 @@
 data/
 pysot/experiments/
+.idea/
+test_data/

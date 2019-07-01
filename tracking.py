@@ -21,6 +21,8 @@ from vision.ssd.mobilenetv1_ssd_lite import create_mobilenetv1_ssd_lite, create_
 from vision.ssd.squeezenet_ssd_lite import create_squeezenet_ssd_lite, create_squeezenet_ssd_lite_predictor
 from vision.ssd.mobilenet_v2_ssd_lite import create_mobilenetv2_ssd_lite, create_mobilenetv2_ssd_lite_predictor
 
+import pyrealsense2 as rs
+
 torch.set_num_threads(1)
 
 
@@ -30,7 +32,7 @@ def parse_args():
                         default='pysot/experiments/siamrpn_alex_dwxcorr/config.yaml')
     parser.add_argument('--snapshot', type=str, help='model name',
                         default='pysot/experiments/siamrpn_alex_dwxcorr/model.pth')
-    parser.add_argument('--video_name', default='data/EPSON/20190214_clip/20190214_trim.mp4', type=str,
+    parser.add_argument('--video_name', default='', type=str,
                         help='videos or image files')
     parser.add_argument('--net_type', type=str, help='model name',
                         default='mb1-ssd')
@@ -78,21 +80,23 @@ def prepare_predictor(net_type, model_path, label_path):
 
 
 def do_object_detection(orig_image, predictor, class_names):
-    image = cv2.cvtColor(orig_image, cv2.COLOR_BGR2RGB)
+    detect_img = orig_image.copy()
+    image = cv2.cvtColor(detect_img, cv2.COLOR_BGR2RGB)  # (480, 640, 3)
     boxes, labels, probs = predictor.predict(image, 10, 0.5)
 
+    pred_labels = []
     for i in range(boxes.size(0)):
         box = boxes[i, :]
         label = f"{class_names[labels[i]]}: {probs[i]:.2f}"
-        cv2.rectangle(orig_image, (box[0], box[1]), (box[2], box[3]), (255, 255, 0), 4)
-        cv2.putText(orig_image, label,
-                    (box[0] + 20, box[1] + 40),
+        pred_labels.append(class_names[labels[i]])
+        cv2.rectangle(detect_img, (box[0], box[1]), (box[2], box[3]), (255, 255, 0), 4)
+        cv2.putText(detect_img, label,
+                    (box[0] + 15, box[1] + 60),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    1,  # font scale
+                    0.8,  # font scale
                     (255, 0, 255),
                     2)  # line type
-    # cv2.imshow('annotated', orig_image)
-    return boxes
+    return boxes, pred_labels, detect_img
 
 
 def prepare_tracker(device, model_path):
@@ -126,19 +130,70 @@ class FrameReader(object):
     def iter_next(self):
         if isinstance(self.frame_iter, cv2.VideoCapture):
             ret, frame = self.frame_iter.read()
-            # print(f"FPS: {self.frame_iter.get(cv2.CAP_PROP_FPS)}")
             if not ret:
                 raise StopIteration
             return frame
+        elif isinstance(self.frame_iter, rs.pyrealsense2.pipeline):
+            # Get frameset of color and depth
+            frames = self.frame_iter.wait_for_frames()
+            # frames.get_depth_frame() is a 640x360 depth image
 
+            # Align the depth frame to color frame
+            aligned_frames = self.align.process(frames)
+
+            # Get aligned frames
+            aligned_depth_frame = aligned_frames.get_depth_frame()  # aligned_depth_frame is a 640x480 depth image
+            color_frame = aligned_frames.get_color_frame()
+
+            # Validate that both frames are valid
+            while not aligned_depth_frame or not color_frame:
+                frames = self.frame_iter.wait_for_frames()
+                aligned_frames = self.align.process(frames)
+                aligned_depth_frame = aligned_frames.get_depth_frame()  # aligned_depth_frame is a 640x480 depth image
+                color_frame = aligned_frames.get_color_frame()
+
+            depth_image = np.asanyarray(aligned_depth_frame.get_data())
+            color_image = np.asanyarray(color_frame.get_data())
+
+            # Remove background - Set pixels further than clipping_distance to grey
+            # grey_color = 153
+            # depth_image_3d = np.dstack(
+            #     (depth_image, depth_image, depth_image))  # depth image is 1 channel, color is 3 channels
+            # bg_removed = np.where((depth_image_3d > self.clipping_distance) | (depth_image_3d <= 0), grey_color,
+            #                       color_image)
+
+            return color_image, depth_image
         return cv2.imread(next(self.frame_iter))
 
     def _init_iters(self):
         if not self.video_name:
-            self.frame_iter = cv2.VideoCapture(0)
-            # warmup
-            for i in range(5):
-                self.frame_iter.read()
+            # self.frame_iter = cv2.VideoCapture(1)
+            # # warmup
+            # for i in range(5):
+            #     self.frame_iter.read()
+
+            self.frame_iter = rs.pipeline()
+            config = rs.config()
+            config.enable_stream(rs.stream.depth, 640, 360, rs.format.z16, 30)
+            config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+
+            # Start streaming
+            profile = self.frame_iter.start(config)
+
+            # Getting the depth sensor's depth scale (see rs-align example for explanation)
+            depth_sensor = profile.get_device().first_depth_sensor()
+            depth_scale = depth_sensor.get_depth_scale()
+
+            # We will be removing the background of objects more than
+            #  clipping_distance_in_meters meters away
+            clipping_distance_in_meters = 1  # 1 meter
+            self.clipping_distance = clipping_distance_in_meters / depth_scale
+
+            # Create an align object
+            # rs.align allows us to perform alignment of depth frames to others frames
+            # The "align_to" is the stream type to which we plan to align depth frames.
+            align_to = rs.stream.color
+            self.align = rs.align(align_to)
 
         elif self.video_name.endswith('avi') or \
                 self.video_name.endswith('mp4'):
@@ -149,17 +204,37 @@ class FrameReader(object):
                                      key=lambda x: int(x.split('/')[-1].split('.')[0]))
 
 
-def show_result(frame, bbox):
+def show_result(frame, bbox, depth=None):
     frame_showing = frame.copy()
     cv2.rectangle(frame_showing, (bbox[0], bbox[1]),
-                  (bbox[0] + bbox[2], bbox[1] + bbox[3]),
+                  (bbox[2], bbox[3]),
                   (0, 255, 0), 3)
+    if depth is not None and not np.isnan(depth):
+        cv2.putText(frame_showing, f"{depth:.2f} meters away",
+                    (bbox[0] + 15, bbox[1] + 25),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,  # font scale
+                    (255, 0, 255),
+                    2)  # line type
     x1, y1, x2, y2 = max(int(bbox[0]), 0), max(int(bbox[1]), 0), min(int(bbox[0] + bbox[2]), frame.shape[1]), min(
         int(bbox[1] + bbox[3]), frame.shape[0])
     frame_output = np.zeros_like(frame)
     frame_output[y1:y2, x1:x2] = 255
     final_frame = cv2.hconcat((frame_output, frame_showing))
     return final_frame
+
+
+def get_mean_depth(depth_frame, bbox):
+    if depth_frame is not None:
+        mean_depth = np.nanmean(depth_frame[bbox[0]: bbox[2], bbox[1]: bbox[3]])
+        mean_depth /= 1e3
+        if not np.isnan(mean_depth):
+            print(f"{mean_depth} meters away")
+        else:
+            mean_depth = None
+    else:
+        mean_depth = None
+    return mean_depth
 
 
 def main():
@@ -181,54 +256,65 @@ def main():
 
     cv2.namedWindow(video_name, cv2.WND_PROP_FULLSCREEN)
     stat_time = []
+    initialized = False
 
     # Stops when the predictor first detects a door
-    boxes = torch.zeros(0, 4)
-    frame = None
-    while boxes.size(0) == 0:
-        try:
-            frame = next(frame_reader)
-        except StopIteration:
-            break
-        boxes = do_object_detection(frame, predictor, class_names)
+    # boxes = torch.zeros(0, 4)
+    # colour_frame = None
+    # while boxes.size(0) == 0:
+    #     try:
+    #         frames = next(frame_reader)
+    #         if isinstance(frames, tuple):
+    #             colour_frame, _ = frames
+    #         else:
+    #             colour_frame = frames
+    #         cv2.waitKey(1)
+    #     except StopIteration:
+    #         break
+    #     boxes, labels = do_object_detection(colour_frame, predictor, class_names)
+    #
+    # boxes = boxes.detach().cpu().numpy()
+    # tracker.init(colour_frame, boxes[0])
 
-    boxes = boxes.detach().cpu().numpy()
-    tracker.init(frame, boxes[0])
+    for frames in frame_reader:
+        if isinstance(frames, tuple):
+            colour_frame, depth_frame = frames
+        else:
+            colour_frame = frames
+            depth_frame = None
 
-    for frame in frame_reader:
         cur_time = time.time()
-        boxes = do_object_detection(frame, predictor, class_names)
+        boxes, labels, detect_img = do_object_detection(colour_frame, predictor, class_names)
         # Object detected
         if boxes.size(0) > 0:
             boxes = boxes.detach().cpu().numpy()
-            bbox = [boxes[0, 0], boxes[0, 1], boxes[0, 2] - boxes[0, 0], boxes[0, 3] - boxes[0, 1]]
-            tracker.init(frame, bbox)
-            final_frame = show_result(frame, bbox)
+            bbox = [int(boxes[0, 0]), int(boxes[0, 1]), int(boxes[0, 2]), int(boxes[0, 3])]
+            tracker.init(colour_frame, bbox)
+            final_frame = show_result(detect_img, bbox, get_mean_depth(depth_frame, bbox))
+            initialized = True
         else:
-            outputs = tracker.track(frame)
-            if 'polygon' in outputs:
-                polygon = np.array(outputs['polygon']).astype(np.int32)
-                cv2.polylines(frame, [polygon.reshape((-1, 1, 2))],
-                              True, (0, 255, 0), 3)
-                mask = ((outputs['mask'] > cfg.TRACK.MASK_THERSHOLD) * 255)
-                mask = mask.astype(np.uint8)
-                mask = np.stack([mask, mask * 255, mask]).transpose(1, 2, 0)
-                frame_showing = cv2.addWeighted(frame, 0.77, mask, 0.23, -1)
-                final_frame = cv2.hconcat((frame, frame_showing))
-            else:
+            # No object is detected
+            if initialized:
+                # Already initialized a tracker. Keep tracking
+                outputs = tracker.track(colour_frame)
                 bbox = list(map(int, outputs['bbox']))
-                final_frame = show_result(frame, bbox)
-
+                bbox = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
+                final_frame = show_result(colour_frame, bbox, get_mean_depth(depth_frame, bbox))
+            else:
+                # No tracker is initialized. Show the whole frame.
+                frame_output = np.zeros_like(colour_frame)
+                frame_showing = colour_frame.copy()
+                final_frame = cv2.hconcat((frame_output, frame_showing))
         cv2.imshow(video_name, final_frame)
-        keyPressed = cv2.waitKey(1) & 0xff
+        key_pressed = cv2.waitKey(1) & 0xff
 
-        if keyPressed == 27 or keyPressed == 1048603:
-            print('exited the program by pressing ESC')
+        if key_pressed == 27 or key_pressed == 1048603:
+            print('Exited the program by pressing ESC')
             break  # esc to quit
 
         stat_time.append(time.time() - cur_time)
         # print('iteration time = ', time.time() - cur_time)
-    print('average iteration time =', np.average(stat_time))
+    print('Average iteration time =', np.average(stat_time))
 
 
 if __name__ == '__main__':
