@@ -246,35 +246,62 @@ def main():
     class_names, predictor = prepare_predictor(args.net_type, args.model_path, args.label_path)
     tracker = prepare_tracker(device, args.snapshot)
 
-    print('Finished preparing, start streaming')
-    frame_reader = FrameReader(args.video_name)
+    cv2.namedWindow('output', cv2.WINDOW_AUTOSIZE)
+    cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
+    cv2.namedWindow('depth', cv2.WINDOW_AUTOSIZE)
 
-    if args.video_name:
-        video_name = args.video_name.split('/')[-1].split('.')[0]
-    else:
-        video_name = 'webcam'
-
-    cv2.namedWindow(video_name, cv2.WND_PROP_FULLSCREEN)
     stat_time = []
     initialized = False
     track_time = 0
 
+    print('Finished preparing, start streaming')
+
+    # Create a pipeline
+    pipeline = rs.pipeline()
+
+    # Create a config and configure the pipeline to stream
+    #  different resolutions of color and depth streams
+    config = rs.config()
+    config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
+    config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
+
+    # Start streaming
+    profile = pipeline.start(config)
+
+    # Create an align object
+    # rs.align allows us to perform alignment of depth frames to others frames
+    # The "align_to" is the stream type to which we plan to align depth frames.
+    align_to = rs.stream.color
+    align = rs.align(align_to)
+
     try:
-        for frames in frame_reader:
-            if isinstance(frames, tuple):
-                colour_frame, depth_frame = frames
-            else:
-                colour_frame = frames
-                depth_frame = None
+        while True:
+            # Get frameset of color and depth
+            frames = pipeline.wait_for_frames()
+            # frames.get_depth_frame() is a 640x360 depth image
+
+            # Align the depth frame to color frame
+            aligned_frames = align.process(frames)
+
+            # Get aligned frames
+            aligned_depth_frame = aligned_frames.get_depth_frame()  # aligned_depth_frame is a 640x480 depth image
+            color_frame = aligned_frames.get_color_frame()
+
+            # Validate that both frames are valid
+            if not aligned_depth_frame or not color_frame:
+                continue
+
+            depth_image = np.asanyarray(aligned_depth_frame.get_data())
+            color_image = np.asanyarray(color_frame.get_data())
 
             cur_time = time.time()
-            boxes, labels, detect_img = do_object_detection(colour_frame, predictor, class_names)
+            boxes, labels, detect_img = do_object_detection(color_image, predictor, class_names)
             # Object detected
             if boxes.size(0) > 0:
                 boxes = boxes.detach().cpu().numpy()
                 bbox = [int(boxes[0, 0]), int(boxes[0, 1]), int(boxes[0, 2]), int(boxes[0, 3])]
-                tracker.init(colour_frame, bbox)
-                frame_showing, frame_output, frame_depth = show_result(detect_img, bbox, depth_frame)
+                tracker.init(color_image, bbox)
+                frame_showing, frame_output, frame_depth = show_result(detect_img, bbox, depth_image)
                 initialized = True
                 track_time = 0
             else:
@@ -283,24 +310,25 @@ def main():
                     # loss track of the object
                     initialized = False
                     track_time = 0
-                    frame_output = np.zeros_like(colour_frame)
-                    frame_showing = colour_frame.copy()
-                    frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(depth_frame, alpha=0.03), cv2.COLORMAP_JET)
+                    frame_output = np.zeros_like(color_image)
+                    frame_showing = color_image.copy()
+                    frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
                 elif initialized:
                     # Already initialized a tracker. Keep tracking
-                    outputs = tracker.track(colour_frame)
+                    outputs = tracker.track(color_image)
                     bbox = list(map(int, outputs['bbox']))
                     bbox = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
-                    frame_showing, frame_output, frame_depth = show_result(colour_frame, bbox, depth_frame)
+                    frame_showing, frame_output, frame_depth = show_result(color_image, bbox, depth_image)
                     track_time += 1
                     # print('track_time:', track_time)
                 else:
                     # No tracker is initialized. Show the whole frame.
-                    frame_output = np.zeros_like(colour_frame)
-                    frame_showing = colour_frame.copy()
-                    frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(depth_frame, alpha=0.03), cv2.COLORMAP_JET)
+                    frame_output = np.zeros_like(color_image)
+                    frame_showing = color_image.copy()
+                    frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
+
             cv2.imshow('output', frame_output)
-            cv2.imshow(video_name, frame_showing)
+            cv2.imshow('RealSense', frame_showing)
             cv2.imshow('depth', frame_depth)
             key = cv2.waitKey(1)
 
@@ -315,8 +343,7 @@ def main():
             print('Average iteration time =', np.average(stat_time))
 
     finally:
-        if isinstance(frame_reader.frame_iter, rs.pyrealsense2.pipeline):
-            frame_reader.frame_iter.stop()
+        pipeline.stop()
 
 
 if __name__ == '__main__':
