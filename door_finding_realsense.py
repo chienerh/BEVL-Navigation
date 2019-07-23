@@ -9,7 +9,7 @@ import time
 import cv2
 import torch
 import numpy as np
-import glob
+import sys
 
 from pysot.core.config import cfg
 from pysot.models.model_builder import ModelBuilder
@@ -35,11 +35,11 @@ def parse_args():
     parser.add_argument('--video_name', default='', type=str,
                         help='videos or image files')
     parser.add_argument('--net_type', type=str, help='model name',
-                        default='mb1-ssd')
+                        default='vgg16-ssd')
     parser.add_argument('--model_path', type=str, help='model name',
-                        default='pytorch-ssd/models/20190618/mb1-ssd-Epoch-99-Loss-2.7762672106424966.pth')
+                        default='pytorch-ssd/models/20190622/vgg16-ssd-Epoch-30-Loss-3.0707082748413086.pth')
     parser.add_argument('--label_path', type=str, help='model name',
-                        default='pytorch-ssd/models/20190618/open-images-model-labels.txt')
+                        default='pytorch-ssd/models/20190622/open-images-model-labels.txt')
 
     args = parser.parse_args()
     return args
@@ -114,88 +114,14 @@ def prepare_tracker(device, model_path):
     return tracker
 
 
-class FrameReader(object):
-
-    def __init__(self, video_name) -> None:
-        self.video_name = video_name
-        self._init_iters()
-
-    def __iter__(self):
-        self._init_iters()
-        return self
-
-    def __next__(self):
-        return self.iter_next()
-
-    def _init_iters(self):
-        if not self.video_name:
-            # RealSense
-            self.frame_iter = rs.pipeline()
-            config = rs.config()
-            config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)  # 1280x720 640, 360
-            config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)  # 1280x720 640, 480
-
-            # Start streaming
-            profile = self.frame_iter.start(config)
-
-            # Getting the depth sensor's depth scale (see rs-align example for explanation)
-            depth_sensor = profile.get_device().first_depth_sensor()
-            depth_scale = depth_sensor.get_depth_scale()
-
-            # We will be removing the background of objects more than
-            #  clipping_distance_in_meters meters away
-            clipping_distance_in_meters = 1  # 1 meter
-            self.clipping_distance = clipping_distance_in_meters / depth_scale
-
-            # Create an align object
-            # rs.align allows us to perform alignment of depth frames to others frames
-            # The "align_to" is the stream type to which we plan to align depth frames.
-            align_to = rs.stream.color
-            self.align = rs.align(align_to)
-
-        elif self.video_name.endswith('avi') or \
-                self.video_name.endswith('mp4'):
-            self.frame_iter = cv2.VideoCapture(self.video_name)
-        else:
-            images = glob.glob(os.path.join(self.video_name, '*.jp*'))
-            self.frame_iter = sorted(images,
-                                     key=lambda x: int(x.split('/')[-1].split('.')[0]))
-
-    def iter_next(self):
-        if isinstance(self.frame_iter, rs.pyrealsense2.pipeline):
-            # RealSense
-            # Get frameset of color and depth
-            frames = self.frame_iter.wait_for_frames()
-            # frames.get_depth_frame() is a 640x360 depth image
-
-            # Align the depth frame to color frame
-            aligned_frames = self.align.process(frames)
-
-            # Get aligned frames
-            aligned_depth_frame = aligned_frames.get_depth_frame()  # aligned_depth_frame is a 640x480 depth image
-            color_frame = aligned_frames.get_color_frame()
-
-            # Validate that both frames are valid
-            while not aligned_depth_frame or not color_frame:
-                frames = self.frame_iter.wait_for_frames()
-                aligned_frames = self.align.process(frames)
-                aligned_depth_frame = aligned_frames.get_depth_frame()  # aligned_depth_frame is a 640x480 depth image
-                color_frame = aligned_frames.get_color_frame()
-
-            depth_image = np.asanyarray(aligned_depth_frame.get_data())
-            color_image = np.asanyarray(color_frame.get_data())
-
-            return color_image, depth_image
-        elif isinstance(self.frame_iter, cv2.VideoCapture()):
-            # Read from video
-            ret, frame = self.frame_iter.read()
-            if not ret:
-                raise StopIteration
-            return frame
-        return cv2.imread(next(self.frame_iter))
-
-
 def show_result(frame, bbox, depth_frame):
+    """
+
+    :param frame:
+    :param bbox: x1, y1, x2, y2
+    :param depth_frame:
+    :return: frame_showing, frame_output, frame_depth
+    """
     frame_showing = frame.copy()
     cv2.rectangle(frame_showing, (bbox[0], bbox[1]),
                   (bbox[2], bbox[3]),
@@ -214,8 +140,8 @@ def show_result(frame, bbox, depth_frame):
             cv2.rectangle(frame_depth, (bbox[0], bbox[1]),
                           (bbox[2], bbox[3]),
                           (0, 255, 0), 3)
-    x1, y1, x2, y2 = max(int(bbox[0]), 0), max(int(bbox[1]), 0), min(int(bbox[0] + bbox[2]), frame.shape[1]), min(
-        int(bbox[1] + bbox[3]), frame.shape[0])
+    x1, y1, x2, y2 = max(int(bbox[0]), 0), max(int(bbox[1]), 0), min(int(bbox[2]), frame.shape[1]), min(
+        int(bbox[3]), frame.shape[0])
     frame_output = np.zeros_like(frame)
     frame_output[y1:y2, x1:x2] = 255
     return frame_showing, frame_output, frame_depth
@@ -224,14 +150,89 @@ def show_result(frame, bbox, depth_frame):
 def get_mean_depth(depth_frame, bbox):
     if depth_frame is not None:
         roi = depth_frame[bbox[0]: bbox[2], bbox[1]: bbox[3]]
-        mean_depth = np.NaN if np.all(roi != roi) else np.nanmean(roi)/ 1e3
+        mean_depth = np.NaN if np.all(roi != roi) else np.nanmean(roi) / 1e3
         if not np.isnan(mean_depth):
-            print(f"{mean_depth} meters away")
+            return mean_depth
+            # print(f"{mean_depth} meters away")
         else:
-            mean_depth = None
+            return None
     else:
-        mean_depth = None
-    return mean_depth
+        return None
+
+
+def calculate_bbox_limit(frame_shape):
+    # horizontal and vertical field of view of Argus II
+    argus_fov_h = 19
+    argus_fov_v = 11
+
+    # horizontal and vertical field of view of Realsense
+    rs_fov_h = 69.4
+    rs_fov_v = 42.5
+
+    # Find pixel range for Argus II
+    w, h = frame_shape
+    h_argus = int(h * argus_fov_v / rs_fov_v)
+    w_argus = int(w * argus_fov_h / rs_fov_h)
+
+    # Four corners of Argus II field of view
+    top = (h // 2) - (h_argus // 2)
+    bottom = (h // 2) + (h_argus // 2)
+    left = (w // 2) - (w_argus // 2)
+    right = (w // 2) + (w_argus // 2)
+    bbox_limit = [left, top, right, bottom, bottom-top, right-left]
+
+    return bbox_limit
+
+
+def argus2(frame_showing, bbox_limit, bbox=None):
+    h_argus, w_argus = bbox_limit[4], bbox_limit[5]
+    frame_argus = np.zeros((h_argus, w_argus))
+    command = None
+    # Add Argus FOV box on frame_showing
+    cv2.rectangle(frame_showing, (bbox_limit[0], bbox_limit[1]),
+                  (bbox_limit[2], bbox_limit[3]),
+                  (255, 0, 0), 3)
+
+    if bbox:
+        # check if bbox_argus is in bbox_limit
+        if bbox[0] < bbox_limit[0] and bbox[2] < bbox_limit[0]:
+            # LEFT
+            bbox_argus = None
+            command = 'Left'
+        elif bbox[0] > bbox_limit[2] and bbox[2] > bbox_limit[2]:
+            # RIGHT
+            bbox_argus = None
+            command = 'Right'
+        elif bbox[1] < bbox_limit[1] and bbox[3] < bbox_limit[1]:
+            # UP
+            bbox_argus = None
+            command = 'Up'
+        elif bbox[1] > bbox_limit[3] and bbox[3] > bbox_limit[3]:
+            # DOWN
+            bbox_argus = None
+            command = 'Down'
+        else:
+            bbox_argus = [max(bbox_limit[0], bbox[0]), max(bbox_limit[1], bbox[1]), min(bbox_limit[2], bbox[2]),
+                          min(bbox_limit[3], bbox[3])]
+            command = 'In the view'
+
+        # Add bbox on Argus
+        if bbox_argus:
+            cv2.rectangle(frame_showing, (bbox_argus[0], bbox_argus[1]),
+                          (bbox_argus[2], bbox_argus[3]),
+                          (0, 0, 255), 3)
+
+            # Output for displaying on ArgusII
+            x1, y1, x2, y2 = max(bbox_argus[0]-bbox_limit[0], 0), max(bbox_argus[1]-bbox_limit[1], 0), min(
+                bbox_argus[2]-bbox_limit[0], w_argus), min(int(bbox_argus[3]-bbox_limit[1]), h_argus)
+            frame_argus[y1:y2, x1:x2] = 255
+            frame_argus = cv2.resize(frame_argus, (600, 400))
+
+            # print('bbox:', bbox)
+            # print('bbox_argus:', bbox_argus)
+            # print('x1:', x1, 'y1:', y1, 'x2:', x2, 'y2:', y2)
+
+    return frame_showing, frame_argus, command
 
 
 def main():
@@ -249,6 +250,11 @@ def main():
     cv2.namedWindow('output', cv2.WINDOW_AUTOSIZE)
     cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
     cv2.namedWindow('depth', cv2.WINDOW_AUTOSIZE)
+    cv2.namedWindow('argus', cv2.WINDOW_AUTOSIZE)
+    cv2.moveWindow('output', 700, 540)
+    cv2.moveWindow('RealSense', 0, 0)
+    cv2.moveWindow('depth', 700, 0)
+    cv2.moveWindow('argus', 200, 560)
 
     stat_time = []
     initialized = False
@@ -260,13 +266,13 @@ def main():
     pipeline = rs.pipeline()
 
     # Create a config and configure the pipeline to stream
-    #  different resolutions of color and depth streams
+    # different resolutions of color and depth streams
+    frame_shape = [640, 480]  # [1280, 720] [640, 480]
     config = rs.config()
-    config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
-    config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
+    config.enable_stream(rs.stream.depth, frame_shape[0], frame_shape[1], rs.format.z16, 30)
+    config.enable_stream(rs.stream.color, frame_shape[0], frame_shape[1], rs.format.bgr8, 30)
 
-    # Start streaming
-    profile = pipeline.start(config)
+    bbox_limit = calculate_bbox_limit(frame_shape)  # bbox_limit=[x1, y1, x2, y2, h, w]
 
     # Create an align object
     # rs.align allows us to perform alignment of depth frames to others frames
@@ -274,7 +280,11 @@ def main():
     align_to = rs.stream.color
     align = rs.align(align_to)
 
+    profile = pipeline.start(config)
+
     try:
+        # Start streaming
+
         while True:
             # Get frameset of color and depth
             frames = pipeline.wait_for_frames()
@@ -298,27 +308,32 @@ def main():
             boxes, labels, detect_img = do_object_detection(color_image, predictor, class_names)
             # Object detected
             if boxes.size(0) > 0:
-                boxes = boxes.detach().cpu().numpy()
-                bbox = [int(boxes[0, 0]), int(boxes[0, 1]), int(boxes[0, 2]), int(boxes[0, 3])]
-                tracker.init(color_image, bbox)
+                boxes = boxes.detach().cpu().numpy()  # boxes=[x1, y1, x2, y2]
+                bbox_tracker = [int(boxes[0, 0]), int(boxes[0, 1]), int(boxes[0, 2] - boxes[0, 0]),
+                                int(boxes[0, 3] - boxes[0, 1])]  # bbox=[x1, y1, w, h]
+                tracker.init(color_image, bbox_tracker)
+                bbox = [int(boxes[0, 0]), int(boxes[0, 1]), int(boxes[0, 2]), int(boxes[0, 3])]  # bbox=[x1, y1, x2, y2]
                 frame_showing, frame_output, frame_depth = show_result(detect_img, bbox, depth_image)
+                frame_showing, frame_argus, command = argus2(frame_showing, bbox_limit, bbox)
                 initialized = True
                 track_time = 0
             else:
                 # No object is detected
-                if track_time > 20:
+                if track_time > 30:
                     # loss track of the object
                     initialized = False
                     track_time = 0
                     frame_output = np.zeros_like(color_image)
                     frame_showing = color_image.copy()
                     frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
+                    frame_showing, frame_argus, command = argus2(frame_showing, bbox_limit)
                 elif initialized:
                     # Already initialized a tracker. Keep tracking
                     outputs = tracker.track(color_image)
-                    bbox = list(map(int, outputs['bbox']))
-                    bbox = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]
+                    bbox = list(map(int, outputs['bbox']))  # bbox=[x1, y1, w, h]
+                    bbox = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]  # bbox=[x1, y1, x2, y2]
                     frame_showing, frame_output, frame_depth = show_result(color_image, bbox, depth_image)
+                    frame_showing, frame_argus, command = argus2(frame_showing, bbox_limit, bbox)
                     track_time += 1
                     # print('track_time:', track_time)
                 else:
@@ -326,10 +341,17 @@ def main():
                     frame_output = np.zeros_like(color_image)
                     frame_showing = color_image.copy()
                     frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
+                    frame_showing, frame_argus, command = argus2(frame_showing, bbox_limit)
+
+            if command:
+                print('%s\r' % command, end="")
+            else:
+                print('%s\r' % 'no command', end="")
 
             cv2.imshow('output', frame_output)
             cv2.imshow('RealSense', frame_showing)
             cv2.imshow('depth', frame_depth)
+            cv2.imshow('argus', frame_argus)
             key = cv2.waitKey(1)
 
             if key & 0xFF == ord('q') or key == 27:
@@ -344,6 +366,7 @@ def main():
 
     finally:
         pipeline.stop()
+        cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
