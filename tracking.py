@@ -314,7 +314,8 @@ def main():
 
         stat_time.append(time.time() - cur_time)
         # print('iteration time = ', time.time() - cur_time)
-    print('Average iteration time =', np.average(stat_time))
+    if len(stat_time) > 0:
+        print('Average iteration time =', np.average(stat_time))
 
 
 if __name__ == '__main__':
