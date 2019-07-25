@@ -266,6 +266,7 @@ frame_count = 0
 time_str = time.ctime().replace(" ", "_").replace(":", "_")
 save_path = f"./{time_str}"
 os.makedirs(save_path, exist_ok=True)
+prev_verts, prev_texcoords = None, None
 
 while True:
     # Grab camera data
@@ -301,7 +302,18 @@ while True:
         v, t = points.get_vertices(), points.get_texture_coordinates()
         verts = np.asanyarray(v).view(np.float32).reshape(-1, 3)  # xyz
         texcoords = np.asanyarray(t).view(np.float32).reshape(-1, 2)  # uv
+
+        # if prev_verts is not None and prev_texcoords is not None:
+        #     print("verts", np.mean(np.abs(verts - prev_verts)))
+        #     print("texcoord", np.mean(np.abs(texcoords - prev_texcoords)))
+
+        if (prev_verts is None and prev_texcoords is None) or (np.mean(np.abs(verts - prev_verts)) > 5.5e-2) or (
+                np.mean(np.abs(texcoords - prev_texcoords)) > 1.5e-2):
+            points.export_to_ply(os.path.join(save_path, f"frame_{frame_count}.ply"), mapped_frame)
+
         frame_count += 1
+        prev_verts = verts
+        prev_texcoords = texcoords
 
     # Render
     now = time.time()
