@@ -8,6 +8,7 @@ import cv2
 import torch
 import numpy as np
 import pyrealsense2 as rs
+import time
 
 from pysot.core.config import cfg
 from pysot.models.model_builder import ModelBuilder
@@ -59,7 +60,6 @@ class Navigation:
         # Initialization for Functions
         self.initialized = False
         self.track_time = 0
-        self.first_cmd = True
 
         # Initialization for Detect & Tracking
         self.predictor = None
@@ -73,7 +73,8 @@ class Navigation:
         # Initialization for Feedback
         self.bbox_limit = []  # bbox_limit=[x1, y1, x2, y2, h, w]
         self.command = None
-        self.first_cmd = True
+        self.last_cmd = None
+        self.timer = time.time()
 
         # Set up
         self.setup_pipeline()
@@ -211,6 +212,7 @@ class Navigation:
                         2)  # line type
 
     def get_frame(self):
+        self.last_cmd = self.command
         self.reset()
         # Get frameset of color and depth
         frames = self.pipeline.wait_for_frames()
@@ -269,7 +271,7 @@ class Navigation:
         self.argus2()
         self.track_time += 1
 
-    def loss_track(self):
+    def lose_track(self):
         # loss track of the object
         self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03), cv2.COLORMAP_JET)
         self.argus2()
@@ -342,7 +344,7 @@ class Navigation:
     def get_mean_depth(self):
         if self.depth_image is not None:
             roi = self.depth_image[self.bbox[0]: self.bbox[2], self.bbox[1]: self.bbox[3]]
-            mean_depth = np.NaN if np.all(roi != roi) else np.nanmedian(roi) / 1e3
+            mean_depth = np.NaN if np.all(roi != roi) else np.nanmean(roi) / 1e3
             if not np.isnan(mean_depth):
                 return mean_depth
             else:
@@ -350,33 +352,40 @@ class Navigation:
         else:
             return None
 
+    def cmd_to_arduino(self, arduino):
+        if self.command == 'Left':
+            arduino.write('2'.encode())
+        elif self.command == 'Right':
+            arduino.write('3'.encode())
+        elif self.command == 'Forward':
+            arduino.write('4'.encode())
+        elif self.command == 'Stop':
+            arduino.write('0'.encode())
+        self.timer = time.time()
+
     def give_cmd(self, arduino):
         if self.command is not None:
-            print('%s    \r' % self.command, end="")
-            if self.first_cmd or arduino.read().decode("utf-8") == '9':
-                if self.command == 'Left':
-                    arduino.write('2'.encode())
-                elif self.command == 'Right':
-                    arduino.write('3'.encode())
-                elif self.command == 'Forward':
-                    arduino.write('4'.encode())
-                elif self.command == 'Stop':
-                    arduino.write('0'.encode())
-                self.first_cmd = False
+            print('%s        \r' % self.command, end="")
+            if time.time() - self.timer > 1.0:
+                self.cmd_to_arduino(arduino)
+            else:
+                if self.last_cmd is not None:
+                    if self.last_cmd is not self.command:
+                        self.cmd_to_arduino(arduino)
         else:
-            print('%s    \r' % 'no command', end="")
+            print('%s        \r' % 'no command', end="")
 
     def detect_n_track(self):
         if len(self.pred_boxes) > 0:  # Object detected
             self.detected()
         else:  # No object is detected
             if self.track_time > 50:
-                self.loss_track()
+                self.lose_track()
             elif self.initialized:
                 self.keep_tracking()
             else:
                 self.no_tracker()
         if self.depth_value:
-            if self.depth_value <= 1.5:
+            if self.depth_value <= 2.0:
                 self.command = 'Stop'
-        print('%s    \r' % 'no command', end="")
+        print('%s        \r' % 'no command', end="")

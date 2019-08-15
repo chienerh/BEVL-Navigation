@@ -16,7 +16,7 @@ def main():
             # Try to skip frames to make it faster
             if noskip:
                 nav.do_object_detection()
-                noskip = False
+                # noskip = False
             else:
                 noskip = True
             nav.detect_n_track()
@@ -26,7 +26,7 @@ def main():
                 print('Exited the program by pressing q')
                 break
 
-            print("FPS: ", 1/(time.time()-start_time))
+            # print("FPS: ", 1/(time.time()-start_time))
 
     finally:
         cv2.destroyAllWindows()
