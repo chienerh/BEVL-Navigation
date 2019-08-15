@@ -38,7 +38,7 @@ python realsense_door.py
 ```
 If you want to run RealSense + Door algorithm + Arduino Motor Feedback,
 ```
-python arduino_door.py
+sudo python3 arduino_door.py
 ```
 
 ## Result
@@ -46,3 +46,25 @@ python arduino_door.py
 While running on GTX 1660 Ti Laptop, it can reach to 10 FPS.
 ### Door detection
 ### Door tracking
+
+## Combine with ORB-SLAM2
+To combine our system with [ORB-SLAM2](https://github.com/raulmur/ORB_SLAM2), place the files in orb-slam2 folder to designated location in [ORB-SLAM2](https://github.com/raulmur/ORB_SLAM2).
+* Replace `ORB-SLAM2/CMakeLists.txt`
+* `ORB-SLAM2/detectntrack.py`
+* `ORB-SLAM2/Examples/RGB-D/RealSense.yaml`
+* `ORB-SLAM2/Examples/RGB-D/rgbd_realsense.cc`
+* `ORB-SLAM2/Examples/RGB-D/rgbd_rs_door.cc`
+build ORB-SLAM2 again.
+```
+cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE=/usr/bin/python3.6 -DPYTHON_INCLUDE_DIRS=/usr/include/python3.6 -DPYTHON_LIBRARY=/usr/lib/python3.6/config/libpython3.6.so
+make -j
+```
+For running RealSense + ORB-SLAM2,
+```
+./Examples/RGB-D/rgbd_realsense
+```
+For running RealSense + ORB-SLAM2 + Door algorithm,
+```
+./Examples/RGB-D/rgbd_rs_door
+```
