@@ -21,27 +21,9 @@ from vision.ssd.squeezenet_ssd_lite import create_squeezenet_ssd_lite, create_sq
 from vision.ssd.mobilenet_v2_ssd_lite import create_mobilenetv2_ssd_lite, create_mobilenetv2_ssd_lite_predictor
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='tracking demo')
-    parser.add_argument('--config', type=str, help='config file',
-                        default='../pysot/experiments/siamrpn_alex_dwxcorr/config.yaml')
-    parser.add_argument('--snapshot', type=str, help='model name',
-                        default='../pysot/experiments/siamrpn_alex_dwxcorr/model.pth')
-    parser.add_argument('--video_name', default='', type=str,
-                        help='videos or image files')
-    parser.add_argument('--net_type', type=str, help='model name',
-                        default='vgg16-ssd')
-    parser.add_argument('--model_path', type=str, help='model name',
-                        default='../pytorch-ssd/models/20190622/vgg16-ssd-Epoch-30-Loss-3.0707082748413086.pth')
-    parser.add_argument('--label_path', type=str, help='model name',
-                        default='../pytorch-ssd/models/20190622/open-images-model-labels.txt')
-
-    args = parser.parse_args()
-    return args
-
-
 class Navigation:
-    def __init__(self, frame_shape=(640, 480)):
+    def __init__(self, det_net_type, det_model_path, det_label_path, trk_model_path, trk_config,
+                 frame_shape=(640, 480)):
         # Initialization for RealSense
         self.frame_shape = frame_shape
         self.frame_shape_hw = (self.frame_shape[1], self.frame_shape[0])
@@ -77,7 +59,7 @@ class Navigation:
         self.timer = time.time()
 
         # Set up
-        self.setup_pipeline()
+        self.setup_pipeline(det_net_type, det_model_path, det_label_path, trk_model_path, trk_config)
         self.setup_realsense()
 
     def reset(self):
@@ -133,17 +115,15 @@ class Navigation:
         # build tracker
         self.tracker = build_tracker(model)
 
-    def setup_pipeline(self):
-        args = parse_args()
-
+    def setup_pipeline(self, det_net_type, det_model_path, det_label_path, trk_model_path, trk_config):
         # load config
-        cfg.merge_from_file(args.config)
+        cfg.merge_from_file(trk_config)
         cfg.CUDA = torch.cuda.is_available()
         device = torch.device('cuda' if cfg.CUDA else 'cpu')
         print('device:', device)
 
-        self.prepare_predictor(args.net_type, args.model_path, args.label_path)
-        self.prepare_tracker(device, args.snapshot)
+        self.prepare_predictor(det_net_type, det_model_path, det_label_path)
+        self.prepare_tracker(device, trk_model_path)
 
     def setup_realsense(self):
         # Create a pipeline
@@ -160,7 +140,7 @@ class Navigation:
         align_to = rs.stream.color
         self.align = rs.align(align_to)
 
-        profile = self.pipeline.start(config)
+        self.pipeline.start(config)
 
         cv2.namedWindow('output', cv2.WINDOW_AUTOSIZE)
         cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
