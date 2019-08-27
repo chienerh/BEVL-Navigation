@@ -3,9 +3,8 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import argparse
 import cv2
-import torch
+# import torch
 import numpy as np
 import pyrealsense2 as rs
 import time
@@ -64,7 +63,6 @@ class Navigation:
 
     def reset(self):
         self.frame_output = np.zeros(self.frame_shape_hw)
-        self.frame_argus = np.zeros(self.frame_shape_hw)
         self.depth_value = None
         self.depth_image = None
         self.color_image = None
@@ -104,6 +102,7 @@ class Navigation:
             raise ValueError("The net type is wrong. It should be one of vgg16-ssd, mb1-ssd and mb1-ssd-lite.")
 
     def prepare_tracker(self, device, model_path):
+        import torch
         # create model
         model = ModelBuilder()
 
@@ -117,6 +116,7 @@ class Navigation:
 
     def setup_pipeline(self, det_net_type, det_model_path, det_label_path, trk_model_path, trk_config):
         # load config
+        import torch
         cfg.merge_from_file(trk_config)
         cfg.CUDA = torch.cuda.is_available()
         device = torch.device('cuda' if cfg.CUDA else 'cpu')
@@ -207,13 +207,13 @@ class Navigation:
 
         # Validate that both frames are valid
         if not aligned_depth_frame or not color_frame:
-            return 0
+            return False
 
         self.depth_image = np.asanyarray(aligned_depth_frame.get_data())
         self.color_image = np.asanyarray(color_frame.get_data())
         self.frame_showing = self.color_image.copy()
 
-        return 1
+        return True
 
     def show_img(self):
         self.frame_argus = cv2.resize(self.frame_argus, (640, 480))
@@ -259,7 +259,7 @@ class Navigation:
         self.track_time = 0
 
     def argus2(self):
-        self.frame_argus = np.zeros((self.bbox_limit[4], self.bbox_limit[5]))
+        self.frame_argus = np.zeros((self.bbox_limit[4], self.bbox_limit[5]), np.uint8)
         # Add Argus FOV box on frame_showing
         cv2.rectangle(self.frame_showing, (self.bbox_limit[0], self.bbox_limit[1]),
                       (self.bbox_limit[2], self.bbox_limit[3]),
@@ -296,7 +296,11 @@ class Navigation:
                                                                                  0), min(
                     bbox_argus[2] - self.bbox_limit[0], self.bbox_limit[5]), min(
                     int(bbox_argus[3] - self.bbox_limit[1]), self.bbox_limit[4])
-                self.frame_argus[y1:y2, x1:x2] = 255
+                area_ratio = ((x2-x1)*(y2-y1)) / (self.bbox_limit[4] * self.bbox_limit[5])
+                if area_ratio > 0.5:
+                    self.frame_argus[y1:y2, x1:x2] = 255 - area_ratio * 128
+                else:
+                    self.frame_argus[y1:y2, x1:x2] = 255
 
     def show_result(self):
         cv2.rectangle(self.frame_showing, (self.bbox[0], self.bbox[1]),

@@ -29,20 +29,13 @@ def main():
     nav = Navigation(args.det_net_type, args.det_model, args.det_label, args.trk_model,
                      args.trk_config)  # Navigation((w,h))
     try:
-        noskip = True
         while True:
             start_time = time.time()
-            if nav.get_frame() == 0:
+            if not nav.get_frame():
                 continue
 
-            # Try to skip frames to make it faster
-            if noskip:
-                nav.do_object_detection()
-                # noskip = False
-            else:
-                noskip = True
+            nav.do_object_detection()
             nav.detect_n_track()
-
             key = nav.show_img()
             if key & 0xFF == ord('q') or key == 27:
                 print('Exited the program by pressing q')
