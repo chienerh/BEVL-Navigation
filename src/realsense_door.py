@@ -41,7 +41,7 @@ def main():
                 print('Exited the program by pressing q')
                 break
 
-            # print("FPS: ", 1/(time.time()-start_time))
+            print("FPS: ", 1/(time.time()-start_time))
 
     finally:
         cv2.destroyAllWindows()
