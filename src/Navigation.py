@@ -50,7 +50,7 @@ class Navigation:
         self.pred_boxes = None
         self.tracker = None
         self.bbox = []  # x1, y1, x2, y2
-        self.door_index = 0
+        # self.door_index = 0
 
         # Initialization for Feedback
         self.bbox_limit = []  # bbox_limit=[x1, y1, x2, y2, h, w]
@@ -70,7 +70,7 @@ class Navigation:
         self.command = None
         self.bbox = None
         self.pred_boxes = []
-        self.door_index = 0
+        # self.door_index = 0
 
     def prepare_predictor(self, net_type, model_path, label_path):
         self.class_names = [name.strip() for name in open(label_path).readlines()]
@@ -194,15 +194,15 @@ class Navigation:
                         (255, 0, 255),
                         2)  # line type
         # pick the highest probs door (label 1)
-        if len(self.pred_boxes) > 1:
-            print('labels:', labels)
-            print('probs:', probs)
-            print('np.where(labels == 1)[0]:', np.where(labels == 1)[0])
-            print('probs_where:', probs[np.where(labels == 1)[0]])
-            max_prob = max(probs[np.where(labels == 1)[0]])
-            self.door_index = probs == max_prob
-            print('max_prob:', max_prob)
-            print('door_index:', self.door_index)
+        # if len(self.pred_boxes) > 1:
+        #     print('labels:', labels)
+        #     print('probs:', probs)
+        #     print('np.where(labels == 1)[0]:', np.where(labels == 1)[0])
+        #     print('probs_where:', probs[np.where(labels == 1)[0]])
+            # max_prob = max(probs[np.where(labels == 1)[0]])
+            # self.door_index = probs == max_prob
+            # print('max_prob:', max_prob)
+            # print('door_index:', self.door_index)
 
     def get_frame(self):
         self.last_cmd = self.command
@@ -241,14 +241,14 @@ class Navigation:
     def detected(self):
         # Object detected. Initialize tracker
         boxes = self.pred_boxes.detach().cpu().numpy()  # boxes=[[x1, y1, x2, y2]]
-        print('boxes:', boxes)
-        print('door_index:', self.door_index)
-        bbox_tracker = [int(boxes[self.door_index, 0]), int(boxes[self.door_index, 1]),
-                        int(boxes[self.door_index, 2] - boxes[self.door_index, 0]),
-                        int(boxes[self.door_index, 3] - boxes[self.door_index, 1])]  # bbox=[x1, y1, w, h]
+        # print('boxes:', boxes)
+        # print('door_index:', self.door_index)
+        bbox_tracker = [int(boxes[0, 0]), int(boxes[0, 1]),
+                        int(boxes[0, 2] - boxes[0, 0]),
+                        int(boxes[0, 3] - boxes[0, 1])]  # bbox=[x1, y1, w, h]
         self.tracker.init(self.color_image, bbox_tracker)
-        self.bbox = [int(boxes[self.door_index, 0]), int(boxes[self.door_index, 1]),
-                     int(boxes[self.door_index, 2]), int(boxes[self.door_index, 3])]  # bbox=[x1, y1, x2, y2]
+        self.bbox = [int(boxes[0, 0]), int(boxes[0, 1]),
+                     int(boxes[0, 2]), int(boxes[0, 3])]  # bbox=[x1, y1, x2, y2]
         self.show_result()
         self.argus2()
         self.initialized = True
