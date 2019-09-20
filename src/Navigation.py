@@ -50,7 +50,7 @@ class Navigation:
         self.pred_boxes = None
         self.tracker = None
         self.bbox = []  # x1, y1, x2, y2
-        self.door_index = []
+        self.door_index = 0
 
         # Initialization for Feedback
         self.bbox_limit = []  # bbox_limit=[x1, y1, x2, y2, h, w]
@@ -151,7 +151,7 @@ class Navigation:
         cv2.moveWindow('output', 700, 540)
         cv2.moveWindow('RealSense', 0, 0)
         cv2.moveWindow('depth', 700, 0)
-        cv2.moveWindow('argus', 0, 540)
+        cv2.moveWindow('argus', 570, 280)
 
     def calculate_bbox_limit(self):
         # horizontal and vertical field of view of Argus II
@@ -229,7 +229,7 @@ class Navigation:
         return True
 
     def show_img(self):
-        self.frame_argus = cv2.resize(self.frame_argus, (640, 480))
+        self.frame_argus = cv2.resize(self.frame_argus, (800, 600))
         cv2.imshow('output', self.frame_output)
         cv2.imshow('RealSense', self.frame_showing)
         cv2.imshow('depth', self.frame_depth)
@@ -240,7 +240,9 @@ class Navigation:
 
     def detected(self):
         # Object detected. Initialize tracker
-        boxes = self.pred_boxes.detach().cpu().numpy()  # boxes=[x1, y1, x2, y2]
+        boxes = self.pred_boxes.detach().cpu().numpy()  # boxes=[[x1, y1, x2, y2]]
+        print('boxes:', boxes)
+        print('door_index:', self.door_index)
         bbox_tracker = [int(boxes[self.door_index, 0]), int(boxes[self.door_index, 1]),
                         int(boxes[self.door_index, 2] - boxes[self.door_index, 0]),
                         int(boxes[self.door_index, 3] - boxes[self.door_index, 1])]  # bbox=[x1, y1, w, h]
