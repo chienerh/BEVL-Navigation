@@ -3,12 +3,13 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from threading import Thread
-
 import cv2
 import numpy as np
 import pyrealsense2 as rs
 import time
+import datetime
+import os
+import logging
 
 from pysot.core.config import cfg
 from pysot.models.model_builder import ModelBuilder
@@ -62,6 +63,29 @@ class Navigation:
         self.setup_pipeline(det_net_type, det_model_path, det_label_path, trk_model_path, trk_config)
         self.setup_realsense()
 
+        # frame saving
+        self.timestamp = datetime.datetime.now()
+        self.frame_id = 0
+
+        self.path_rgb = "data/" + str(self.timestamp) + "/RGB/"
+        self.path_depth = "data/" + str(self.timestamp) + "/Depth/"
+        print('trying to create', self.path_rgb)
+        try:
+            os.makedirs(self.path_rgb)
+            os.makedirs(self.path_depth)
+        except:
+            print('FAIL mkdir')
+
+        # Logger
+        self.path_log = "data/" + str(self.timestamp) + "/" + str(self.timestamp) + ".log"
+        # self.log = logging.getLogger(self.path_log)
+        logging.basicConfig(level=logging.DEBUG)
+        self.logger = logging.getLogger(__name__)
+        handler = logging.FileHandler(self.path_log)
+        handler.setLevel(logging.DEBUG)
+        self.logger.addHandler(handler)
+        self.logger.info('Timestamp, frame id, bounding box, depth, command')
+
     def reset(self):
         self.frame_output = np.zeros(self.frame_shape_hw)
         self.depth_value = None
@@ -70,7 +94,6 @@ class Navigation:
         self.command = None
         self.bbox = None
         self.pred_boxes = []
-        # self.door_index = 0
 
     def prepare_predictor(self, net_type, model_path, label_path):
         self.class_names = [name.strip() for name in open(label_path).readlines()]
@@ -178,7 +201,7 @@ class Navigation:
 
     def do_object_detection(self):
         image = cv2.cvtColor(self.frame_showing, cv2.COLOR_BGR2RGB)  # (480, 640, 3)
-        self.pred_boxes, labels, probs = self.predictor.predict(image, 10, 0.6)
+        self.pred_boxes, labels, probs = self.predictor.predict(image, 1, 0.8)
 
         pred_labels = []
 
@@ -193,23 +216,12 @@ class Navigation:
                         0.8,  # font scale
                         (255, 0, 255),
                         2)  # line type
-        # pick the highest probs door (label 1)
-        # if len(self.pred_boxes) > 1:
-        #     print('labels:', labels)
-        #     print('probs:', probs)
-        #     print('np.where(labels == 1)[0]:', np.where(labels == 1)[0])
-        #     print('probs_where:', probs[np.where(labels == 1)[0]])
-            # max_prob = max(probs[np.where(labels == 1)[0]])
-            # self.door_index = probs == max_prob
-            # print('max_prob:', max_prob)
-            # print('door_index:', self.door_index)
 
     def get_frame(self):
         self.last_cmd = self.command
         self.reset()
         # Get frameset of color and depth
         frames = self.pipeline.wait_for_frames()
-        # frames.get_depth_frame() is a 640x360 depth image
 
         # Align the depth frame to color frame
         aligned_frames = self.align.process(frames)
@@ -225,6 +237,12 @@ class Navigation:
         self.depth_image = np.asanyarray(aligned_depth_frame.get_data())
         self.color_image = np.asanyarray(color_frame.get_data())
         self.frame_showing = self.color_image.copy()
+        self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03), cv2.COLORMAP_JET)
+
+        # save images
+        cv2.imwrite(self.path_rgb + 'frame' + str(self.frame_id) + '.jpg', self.color_image)
+        np.save(self.path_depth + 'frame' + str(self.frame_id) + '.npy', self.depth_image)
+        self.frame_id += 1
 
         return True
 
@@ -241,8 +259,6 @@ class Navigation:
     def detected(self):
         # Object detected. Initialize tracker
         boxes = self.pred_boxes.detach().cpu().numpy()  # boxes=[[x1, y1, x2, y2]]
-        # print('boxes:', boxes)
-        # print('door_index:', self.door_index)
         bbox_tracker = [int(boxes[0, 0]), int(boxes[0, 1]),
                         int(boxes[0, 2] - boxes[0, 0]),
                         int(boxes[0, 3] - boxes[0, 1])]  # bbox=[x1, y1, w, h]
@@ -256,8 +272,9 @@ class Navigation:
 
     def no_tracker(self):
         # No tracker is initialized. Show the whole frame.
-        self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03), cv2.COLORMAP_JET)
+        # self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03), cv2.COLORMAP_JET)
         self.argus2()
+        self.command = 'No door'
 
     def keep_tracking(self):
         # Already initialized a tracker. Keep tracking
@@ -270,10 +287,11 @@ class Navigation:
 
     def lose_track(self):
         # loss track of the object
-        self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03), cv2.COLORMAP_JET)
+        # self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03), cv2.COLORMAP_JET)
         self.argus2()
         self.initialized = False
         self.track_time = 0
+        self.command = 'Lose track'
 
     def argus2(self):
         self.frame_argus = np.zeros((self.bbox_limit[4], self.bbox_limit[5]), np.uint8)
@@ -313,7 +331,7 @@ class Navigation:
                                                                                  0), min(
                     bbox_argus[2] - self.bbox_limit[0], self.bbox_limit[5]), min(
                     int(bbox_argus[3] - self.bbox_limit[1]), self.bbox_limit[4])
-                area_ratio = ((x2-x1)*(y2-y1)) / (self.bbox_limit[4] * self.bbox_limit[5])
+                area_ratio = ((x2 - x1) * (y2 - y1)) / (self.bbox_limit[4] * self.bbox_limit[5])
                 if area_ratio > 0.5:
                     self.frame_argus[y1:y2, x1:x2] = 255 - area_ratio * 128
                 else:
@@ -332,8 +350,6 @@ class Navigation:
                             0.8,  # font scale
                             (255, 0, 255),
                             2)  # line type
-                self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03),
-                                                     cv2.COLORMAP_JET)
                 cv2.rectangle(self.frame_depth, (self.bbox[0], self.bbox[1]),
                               (self.bbox[2], self.bbox[3]),
                               (0, 255, 0), 3)
@@ -389,4 +405,16 @@ class Navigation:
         if self.depth_value:
             if self.depth_value <= 2.0:
                 self.command = 'Stop'
-        print('%s        \r' % 'no command', end="")
+        cv2.putText(self.frame_showing, self.command,
+                    (270, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,  # font scale
+                    (0, 128, 255),
+                    2)  # line type
+        self.log_file()
+
+    def log_file(self):
+        # Timestamp, frame id, bounding box, depth, command
+        records = str(datetime.datetime.now()), self.frame_id, self.bbox, self.depth_value, self.command
+        self.logger.debug(records)
+
