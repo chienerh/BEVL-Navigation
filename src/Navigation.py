@@ -65,7 +65,7 @@ class Navigation:
 
         # frame saving
         self.timestamp = datetime.datetime.now()
-        self.frame_id = 0
+        self.frame_id = -1
 
         self.path_rgb = "data/" + str(self.timestamp) + "/RGB/"
         self.path_depth = "data/" + str(self.timestamp) + "/Depth/"
@@ -240,9 +240,9 @@ class Navigation:
         self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03), cv2.COLORMAP_JET)
 
         # save images
+        self.frame_id += 1
         cv2.imwrite(self.path_rgb + 'frame' + str(self.frame_id) + '.jpg', self.color_image)
         np.save(self.path_depth + 'frame' + str(self.frame_id) + '.npy', self.depth_image)
-        self.frame_id += 1
 
         return True
 
@@ -266,14 +266,13 @@ class Navigation:
         self.bbox = [int(boxes[0, 0]), int(boxes[0, 1]),
                      int(boxes[0, 2]), int(boxes[0, 3])]  # bbox=[x1, y1, x2, y2]
         self.show_result()
-        self.argus2()
         self.initialized = True
         self.track_time = 0
 
     def no_tracker(self):
         # No tracker is initialized. Show the whole frame.
         # self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03), cv2.COLORMAP_JET)
-        self.argus2()
+
         self.command = 'No door'
 
     def keep_tracking(self):
@@ -282,13 +281,11 @@ class Navigation:
         bbox = list(map(int, outputs['bbox']))  # bbox=[x1, y1, w, h]
         self.bbox = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]  # bbox=[x1, y1, x2, y2]
         self.show_result()
-        self.argus2()
         self.track_time += 1
 
     def lose_track(self):
         # loss track of the object
         # self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03), cv2.COLORMAP_JET)
-        self.argus2()
         self.initialized = False
         self.track_time = 0
         self.command = 'Lose track'
@@ -303,16 +300,20 @@ class Navigation:
         if self.bbox:
             # check if bbox_argus is in bbox_limit
             if self.bbox[0] < self.bbox_limit[0] and self.bbox[2] < self.bbox_limit[0]:
-                bbox_argus = None
+                # bbox_argus = None
+                bbox_argus = [0, self.bbox_limit[4], 0, 10]
                 self.command = 'Left'
             elif self.bbox[0] > self.bbox_limit[2] and self.bbox[2] > self.bbox_limit[2]:
-                bbox_argus = None
+                # bbox_argus = None
+                bbox_argus = [0, self.bbox_limit[4], self.bbox_limit[5]-10, self.bbox_limit[5]]
                 self.command = 'Right'
             elif self.bbox[1] < self.bbox_limit[1] and self.bbox[3] < self.bbox_limit[1]:
-                bbox_argus = None
+                # bbox_argus = None
+                bbox_argus = [0, 10, 0, self.bbox_limit[5]]
                 self.command = 'Up'
             elif self.bbox[1] > self.bbox_limit[3] and self.bbox[3] > self.bbox_limit[3]:
-                bbox_argus = None
+                # bbox_argus = None
+                bbox_argus = [self.bbox_limit[4]-10, self.bbox_limit[4], 0, self.bbox_limit[5]]
                 self.command = 'Down'
             else:
                 bbox_argus = [max(self.bbox_limit[0], self.bbox[0]), max(self.bbox_limit[1], self.bbox[1]),
@@ -402,6 +403,7 @@ class Navigation:
                 self.keep_tracking()
             else:
                 self.no_tracker()
+        self.argus2()
         if self.depth_value:
             if self.depth_value <= 2.0:
                 self.command = 'Stop'
