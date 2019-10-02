@@ -16,9 +16,9 @@ def parse_args():
     parser.add_argument('--det_net_type', type=str, help='detection model type',
                         default='vgg16-ssd')
     parser.add_argument('--det_model', type=str, help='detection model name',
-                        default='../pytorch-ssd/models/20190622/vgg16-ssd-Epoch-30-Loss-3.0707082748413086.pth')
+                        default='pytorch-ssd/models/20190622/vgg16-ssd-Epoch-30-Loss-3.0707082748413086.pth')
     parser.add_argument('--det_label', type=str, help='detection label path',
-                        default='../pytorch-ssd/models/20190622/open-images-model-labels.txt')
+                        default='pytorch-ssd/models/20190622/open-images-model-labels.txt')
 
     args = parser.parse_args()
     return args

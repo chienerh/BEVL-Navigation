@@ -78,7 +78,6 @@ class Navigation:
 
         # Logger
         self.path_log = "data/" + str(self.timestamp) + "/" + str(self.timestamp) + ".log"
-        # self.log = logging.getLogger(self.path_log)
         logging.basicConfig(level=logging.DEBUG)
         self.logger = logging.getLogger(__name__)
         handler = logging.FileHandler(self.path_log)
@@ -171,7 +170,7 @@ class Navigation:
         cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
         cv2.namedWindow('depth', cv2.WINDOW_AUTOSIZE)
         cv2.namedWindow('argus', cv2.WINDOW_AUTOSIZE)
-        cv2.moveWindow('output', 700, 540)
+        cv2.moveWindow('output', 1400, 0)
         cv2.moveWindow('RealSense', 0, 0)
         cv2.moveWindow('depth', 700, 0)
         cv2.moveWindow('argus', 570, 280)
@@ -300,20 +299,20 @@ class Navigation:
         if self.bbox:
             # check if bbox_argus is in bbox_limit
             if self.bbox[0] < self.bbox_limit[0] and self.bbox[2] < self.bbox_limit[0]:
-                # bbox_argus = None
-                bbox_argus = [0, self.bbox_limit[4], 0, 10]
+                bbox_argus = None
+                self.frame_argus[0:self.bbox_limit[4], 0:10] = 255
                 self.command = 'Left'
             elif self.bbox[0] > self.bbox_limit[2] and self.bbox[2] > self.bbox_limit[2]:
-                # bbox_argus = None
-                bbox_argus = [0, self.bbox_limit[4], self.bbox_limit[5]-10, self.bbox_limit[5]]
+                bbox_argus = None
+                self.frame_argus[0:self.bbox_limit[4], self.bbox_limit[5]-10:self.bbox_limit[5]] = 255
                 self.command = 'Right'
             elif self.bbox[1] < self.bbox_limit[1] and self.bbox[3] < self.bbox_limit[1]:
-                # bbox_argus = None
-                bbox_argus = [0, 10, 0, self.bbox_limit[5]]
+                bbox_argus = None
+                self.frame_argus[0:10, 0:self.bbox_limit[5]] = 255
                 self.command = 'Up'
             elif self.bbox[1] > self.bbox_limit[3] and self.bbox[3] > self.bbox_limit[3]:
-                # bbox_argus = None
-                bbox_argus = [self.bbox_limit[4]-10, self.bbox_limit[4], 0, self.bbox_limit[5]]
+                bbox_argus = None
+                self.frame_argus[self.bbox_limit[4]-10:self.bbox_limit[4], 0:self.bbox_limit[5]] = 255
                 self.command = 'Down'
             else:
                 bbox_argus = [max(self.bbox_limit[0], self.bbox[0]), max(self.bbox_limit[1], self.bbox[1]),
@@ -393,6 +392,18 @@ class Navigation:
         else:
             print('%s        \r' % 'no command', end="")
 
+    def give_cmd_without_forward(self, arduino):
+        if self.command is not None and self.command is not 'Forward':
+            print('%s        \r' % self.command, end="")
+            if time.time() - self.timer > 1.0:
+                self.cmd_to_arduino(arduino)
+            else:
+                if self.last_cmd is not None:
+                    if self.last_cmd is not self.command:
+                        self.cmd_to_arduino(arduino)
+        else:
+            print('%s        \r' % 'no command', end="")
+
     def detect_n_track(self):
         if len(self.pred_boxes) > 0:  # Object detected
             self.detected()
@@ -417,6 +428,5 @@ class Navigation:
 
     def log_file(self):
         # Timestamp, frame id, bounding box, depth, command
-        records = str(datetime.datetime.now()), self.frame_id, self.bbox, self.depth_value, self.command
-        self.logger.debug(records)
+        self.logger.debug(str(datetime.datetime.now()), self.frame_id, self.bbox, self.depth_value, self.command)
 

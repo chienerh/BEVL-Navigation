@@ -1,8 +1,8 @@
 from Navigation import Navigation
-
 import cv2
-import time
+import serial
 import argparse
+import time
 
 
 def parse_args():
@@ -27,21 +27,25 @@ def parse_args():
 def main():
     args = parse_args()
     nav = Navigation(args.det_net_type, args.det_model, args.det_label, args.trk_model,
-                     args.trk_config)  # Navigation((w,h))
+                     args.trk_config)
     try:
+        # connect to arduino
+        arduino = serial.Serial("/dev/rfcomm0", 9600)
         while True:
             start_time = time.time()
-            if not nav.get_frame():
+            if nav.get_frame() == 0:
                 continue
 
             nav.do_object_detection()
             nav.detect_n_track()
+            nav.give_cmd_without_forward(arduino)
+
             key = nav.show_img()
             if key & 0xFF == ord('q') or key == 27:
                 print('Exited the program by pressing q')
                 break
 
-            # print("FPS: ", 1/(time.time()-start_time))
+            print("FPS: ", 1 / (time.time() - start_time))
 
     finally:
         cv2.destroyAllWindows()
