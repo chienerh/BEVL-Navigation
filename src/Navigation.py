@@ -69,7 +69,6 @@ class Navigation:
 
         self.path_rgb = "data/" + str(self.timestamp) + "/RGB/"
         self.path_depth = "data/" + str(self.timestamp) + "/Depth/"
-        print('trying to create', self.path_rgb)
         try:
             os.makedirs(self.path_rgb)
             os.makedirs(self.path_depth)
@@ -300,19 +299,19 @@ class Navigation:
             # check if bbox_argus is in bbox_limit
             if self.bbox[0] < self.bbox_limit[0] and self.bbox[2] < self.bbox_limit[0]:
                 bbox_argus = None
-                self.frame_argus[0:self.bbox_limit[4], 0:10] = 255
+                self.frame_argus[0:self.bbox_limit[4], 0:20] = 255
                 self.command = 'Left'
             elif self.bbox[0] > self.bbox_limit[2] and self.bbox[2] > self.bbox_limit[2]:
                 bbox_argus = None
-                self.frame_argus[0:self.bbox_limit[4], self.bbox_limit[5]-10:self.bbox_limit[5]] = 255
+                self.frame_argus[0:self.bbox_limit[4], self.bbox_limit[5]-20:self.bbox_limit[5]] = 255
                 self.command = 'Right'
             elif self.bbox[1] < self.bbox_limit[1] and self.bbox[3] < self.bbox_limit[1]:
                 bbox_argus = None
-                self.frame_argus[0:10, 0:self.bbox_limit[5]] = 255
+                self.frame_argus[0:20, 0:self.bbox_limit[5]] = 255
                 self.command = 'Up'
             elif self.bbox[1] > self.bbox_limit[3] and self.bbox[3] > self.bbox_limit[3]:
                 bbox_argus = None
-                self.frame_argus[self.bbox_limit[4]-10:self.bbox_limit[4], 0:self.bbox_limit[5]] = 255
+                self.frame_argus[self.bbox_limit[4]-20:self.bbox_limit[4], 0:self.bbox_limit[5]] = 255
                 self.command = 'Down'
             else:
                 bbox_argus = [max(self.bbox_limit[0], self.bbox[0]), max(self.bbox_limit[1], self.bbox[1]),
@@ -428,5 +427,4 @@ class Navigation:
 
     def log_file(self):
         # Timestamp, frame id, bounding box, depth, command
-        self.logger.debug(str(datetime.datetime.now()), self.frame_id, self.bbox, self.depth_value, self.command)
-
+        self.logger.debug("{}, {}, {}, {}, {}".format(str(datetime.datetime.now()), self.frame_id, self.bbox, self.depth_value, self.command))
