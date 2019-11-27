@@ -1,7 +1,5 @@
 import numpy as np
-import glob
 import cv2
-import time
 import os
 import argparse
 
@@ -9,7 +7,7 @@ import argparse
 def parse_args():
     parser = argparse.ArgumentParser(description='Rerun Realsense Door')
     parser.add_argument('--folder', type=str, help='folder name of the data you want to rerun',
-                        default='2019-10-02 15:52:06.004137')
+                        default='2019-10-22 16:10:32.848331')
 
     args = parser.parse_args()
     return args
@@ -37,13 +35,13 @@ def main():
             bbox = [0, 0, 0, 0]
             currentline = line.split(", ")
             if len(currentline) == 5:
-                [timestamp, frame_id, bbox, depth_value, command] = currentline
+                [timestamp, frame_id, _, depth_value, command] = currentline
             else:
                 [timestamp, frame_id, bbox[0], bbox[1], bbox[2], bbox[3], depth_value, command] = currentline
-            bbox[0] = int(bbox[0].replace('[', ''))
-            bbox[1] = int(bbox[1])
-            bbox[2] = int(bbox[2])
-            bbox[3] = int(bbox[3].replace(']', ''))
+                bbox[0] = int(bbox[0].replace('[', ''))
+                bbox[1] = int(bbox[1])
+                bbox[2] = int(bbox[2])
+                bbox[3] = int(bbox[3].replace(']', ''))
             if depth_value == 'None':
                 depth_value = None
             else:
@@ -80,10 +78,11 @@ def main():
             cv2.imshow('RealSense', frame_showing)
             cv2.imshow('depth', frame_depth)
             # cv2.imshow('argus', frame_argus)
-            key = cv2.waitKey(1)
+            key = cv2.waitKey(50)
             if key & 0xFF == ord('q') or key == 27:
                 print('Exited the program by pressing q')
                 break
+
 
 if __name__ == '__main__':
     main()

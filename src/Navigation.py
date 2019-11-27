@@ -11,10 +11,6 @@ import datetime
 import os
 import logging
 
-from pysot.core.config import cfg
-from pysot.models.model_builder import ModelBuilder
-from pysot.tracker.tracker_builder import build_tracker
-
 from vision.ssd.vgg_ssd import create_vgg_ssd, create_vgg_ssd_predictor
 from vision.ssd.mobilenetv1_ssd import create_mobilenetv1_ssd, create_mobilenetv1_ssd_predictor
 from vision.ssd.mobilenetv1_ssd_lite import create_mobilenetv1_ssd_lite, create_mobilenetv1_ssd_lite_predictor
@@ -40,24 +36,19 @@ class Navigation:
         self.frame_depth = np.zeros(self.frame_shape_hw)
         self.frame_argus = np.zeros(self.frame_shape_hw)
 
-        # Initialization for Functions
-        self.initialized = False
-        self.track_time = 0
-
-        # Initialization for Detect & Tracking
+        # Initialization for Detection
         self.predictor = None
         self.class_names = []
         self.detect_img = None
         self.pred_boxes = None
-        self.tracker = None
         self.bbox = []  # x1, y1, x2, y2
-        # self.door_index = 0
 
         # Initialization for Feedback
         self.bbox_limit = []  # bbox_limit=[x1, y1, x2, y2, h, w]
         self.command = None
         self.last_cmd = None
         self.timer = time.time()
+        self.send = False
 
         # Set up
         self.setup_pipeline(det_net_type, det_model_path, det_label_path, trk_model_path, trk_config)
@@ -92,6 +83,7 @@ class Navigation:
         self.command = None
         self.bbox = None
         self.pred_boxes = []
+        self.send = False
 
     def prepare_predictor(self, net_type, model_path, label_path):
         self.class_names = [name.strip() for name in open(label_path).readlines()]
@@ -124,36 +116,26 @@ class Navigation:
         else:
             raise ValueError("The net type is wrong. It should be one of vgg16-ssd, mb1-ssd and mb1-ssd-lite.")
 
-    def prepare_tracker(self, device, model_path):
-        import torch
-        # create model
-        model = ModelBuilder()
-
-        # load model
-        model.load_state_dict(torch.load(model_path,
-                                         map_location=lambda storage, loc: storage.cpu()))
-        model.eval().to(device)
-
-        # build tracker
-        self.tracker = build_tracker(model)
-
     def setup_pipeline(self, det_net_type, det_model_path, det_label_path, trk_model_path, trk_config):
-        # load config
         import torch
-        cfg.merge_from_file(trk_config)
-        cfg.CUDA = torch.cuda.is_available()
-        device = torch.device('cuda' if cfg.CUDA else 'cpu')
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print('device:', device)
 
         self.prepare_predictor(det_net_type, det_model_path, det_label_path)
-        self.prepare_tracker(device, trk_model_path)
 
     def setup_realsense(self):
         # Create a pipeline
         self.pipeline = rs.pipeline()
 
+        realsense_ctx = rs.context()
+        connected_devices = []
+        for i in range(len(realsense_ctx.devices)):
+            detected_camera = realsense_ctx.devices[i].get_info(rs.camera_info.serial_number)
+            connected_devices.append(detected_camera)
+
         # Create a config and configure the pipeline to stream
         config = rs.config()
+        config.enable_device(connected_devices[0])
         config.enable_stream(rs.stream.depth, self.frame_shape[0], self.frame_shape[1], rs.format.z16, 30)
         config.enable_stream(rs.stream.color, self.frame_shape[0], self.frame_shape[1], rs.format.bgr8, 30)
 
@@ -255,38 +237,11 @@ class Navigation:
         return key
 
     def detected(self):
-        # Object detected. Initialize tracker
+        # Object detected
         boxes = self.pred_boxes.detach().cpu().numpy()  # boxes=[[x1, y1, x2, y2]]
-        bbox_tracker = [int(boxes[0, 0]), int(boxes[0, 1]),
-                        int(boxes[0, 2] - boxes[0, 0]),
-                        int(boxes[0, 3] - boxes[0, 1])]  # bbox=[x1, y1, w, h]
-        self.tracker.init(self.color_image, bbox_tracker)
         self.bbox = [int(boxes[0, 0]), int(boxes[0, 1]),
                      int(boxes[0, 2]), int(boxes[0, 3])]  # bbox=[x1, y1, x2, y2]
         self.show_result()
-        self.initialized = True
-        self.track_time = 0
-
-    def no_tracker(self):
-        # No tracker is initialized. Show the whole frame.
-        # self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03), cv2.COLORMAP_JET)
-
-        self.command = 'No door'
-
-    def keep_tracking(self):
-        # Already initialized a tracker. Keep tracking
-        outputs = self.tracker.track(self.color_image)
-        bbox = list(map(int, outputs['bbox']))  # bbox=[x1, y1, w, h]
-        self.bbox = [bbox[0], bbox[1], bbox[0] + bbox[2], bbox[1] + bbox[3]]  # bbox=[x1, y1, x2, y2]
-        self.show_result()
-        self.track_time += 1
-
-    def lose_track(self):
-        # loss track of the object
-        # self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03), cv2.COLORMAP_JET)
-        self.initialized = False
-        self.track_time = 0
-        self.command = 'Lose track'
 
     def argus2(self):
         self.frame_argus = np.zeros((self.bbox_limit[4], self.bbox_limit[5]), np.uint8)
@@ -396,23 +351,18 @@ class Navigation:
             print('%s        \r' % self.command, end="")
             if time.time() - self.timer > 1.0:
                 self.cmd_to_arduino(arduino)
+                self.send = True
             else:
                 if self.last_cmd is not None:
                     if self.last_cmd is not self.command:
                         self.cmd_to_arduino(arduino)
+                        self.send = True
         else:
             print('%s        \r' % 'no command', end="")
 
-    def detect_n_track(self):
+    def detect_n_show(self):
         if len(self.pred_boxes) > 0:  # Object detected
             self.detected()
-        else:  # No object is detected
-            if self.track_time > 50:
-                self.lose_track()
-            elif self.initialized:
-                self.keep_tracking()
-            else:
-                self.no_tracker()
         self.argus2()
         if self.depth_value:
             if self.depth_value <= 2.0:
@@ -426,5 +376,5 @@ class Navigation:
         self.log_file()
 
     def log_file(self):
-        # Timestamp, frame id, bounding box, depth, command
-        self.logger.debug("{}, {}, {}, {}, {}".format(str(datetime.datetime.now()), self.frame_id, self.bbox, self.depth_value, self.command))
+        # Timestamp, frame id, bounding box, depth, command, send
+        self.logger.debug("{}, {}, {}, {}, {}, {}".format(str(datetime.datetime.now()), self.frame_id, self.bbox, self.depth_value, self.command, self.send))

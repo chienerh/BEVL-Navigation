@@ -37,7 +37,7 @@ def main():
                 continue
 
             nav.do_object_detection()
-            nav.detect_n_track()
+            nav.detect_n_show()
             nav.give_cmd_without_forward(arduino)
 
             key = nav.show_img()

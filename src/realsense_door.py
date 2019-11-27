@@ -35,7 +35,7 @@ def main():
                 continue
 
             nav.do_object_detection()
-            nav.detect_n_track()
+            nav.detect_n_show()
             key = nav.show_img()
             if key & 0xFF == ord('q') or key == 27:
                 print('Exited the program by pressing q')

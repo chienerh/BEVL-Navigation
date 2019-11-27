@@ -1,7 +1,3 @@
-[submodule "pysot"]
-	path = pysot
-	url = https://github.com/chienerh/pysot.git
-	branch = master
 [submodule "pytorch-ssd"]
 	path = pytorch-ssd
 	url = https://github.com/weiyumou/pytorch-ssd.git
