@@ -49,6 +49,7 @@ class Navigation:
         self.last_cmd = None
         self.timer = time.time()
         self.send = False
+        self.stopped = False
 
         # Set up
         self.setup_pipeline(det_net_type, det_model_path, det_label_path, trk_model_path, trk_config)
@@ -364,9 +365,13 @@ class Navigation:
         if len(self.pred_boxes) > 0:  # Object detected
             self.detected()
         self.argus2()
-        if self.depth_value:
-            if self.depth_value <= 2.0:
-                self.command = 'Stop'
+        if self.stopped:
+            self.command = 'Stop'
+        else:
+            if self.depth_value:
+                if self.depth_value <= 2.0:
+                    self.command = 'Stop'
+                    self.stopped = True
         cv2.putText(self.frame_showing, self.command,
                     (270, 30),
                     cv2.FONT_HERSHEY_SIMPLEX,
@@ -374,6 +379,9 @@ class Navigation:
                     (0, 128, 255),
                     2)  # line type
         self.log_file()
+
+    def reset_stop(self):
+        self.stopped = False
 
     def log_file(self):
         # Timestamp, frame id, bounding box, depth, command, send

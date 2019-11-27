@@ -44,6 +44,9 @@ def main():
             if key & 0xFF == ord('q') or key == 27:
                 print('Exited the program by pressing q')
                 break
+            elif key & 0xFF == ord('a'):
+                nav.reset_stop()
+                print('Again, start getting command')
 
             print("FPS: ", 1 / (time.time() - start_time))
 
