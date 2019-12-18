@@ -56,6 +56,7 @@ class Navigation:
         self.setup_realsense()
 
         # frame saving
+        self.running = True
         self.timestamp = datetime.datetime.now()
         self.frame_id = -1
 
@@ -220,10 +221,11 @@ class Navigation:
         self.frame_showing = self.color_image.copy()
         self.frame_depth = cv2.applyColorMap(cv2.convertScaleAbs(self.depth_image, alpha=0.03), cv2.COLORMAP_JET)
 
-        # save images
-        self.frame_id += 1
-        cv2.imwrite(self.path_rgb + 'frame' + str(self.frame_id) + '.jpg', self.color_image)
-        np.save(self.path_depth + 'frame' + str(self.frame_id) + '.npy', self.depth_image)
+        if self.running:
+            # save images
+            self.frame_id += 1
+            cv2.imwrite(self.path_rgb + 'frame' + str(self.frame_id) + '.jpg', self.color_image)
+            np.save(self.path_depth + 'frame' + str(self.frame_id) + '.npy', self.depth_image)
 
         return True
 
@@ -382,6 +384,32 @@ class Navigation:
 
     def reset_stop(self):
         self.stopped = False
+
+    def pause(self):
+        self.running = False
+        self.reset()
+
+    def resume(self):
+        self.running = True
+        self.timestamp = datetime.datetime.now()
+        self.frame_id = -1
+
+        self.path_rgb = "data/" + str(self.timestamp) + "/RGB/"
+        self.path_depth = "data/" + str(self.timestamp) + "/Depth/"
+        try:
+            os.makedirs(self.path_rgb)
+            os.makedirs(self.path_depth)
+        except:
+            print('FAIL mkdir')
+
+        # Logger
+        self.path_log = "data/" + str(self.timestamp) + "/" + str(self.timestamp) + ".log"
+        logging.basicConfig(level=logging.DEBUG)
+        self.logger = logging.getLogger(__name__)
+        handler = logging.FileHandler(self.path_log)
+        handler.setLevel(logging.DEBUG)
+        self.logger.addHandler(handler)
+        self.logger.info('Timestamp, frame id, bounding box, depth, command, sent')
 
     def log_file(self):
         # Timestamp, frame id, bounding box, depth, command, send

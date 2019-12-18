@@ -33,20 +33,25 @@ def main():
         arduino = serial.Serial("/dev/rfcomm0", 9600)
         while True:
             start_time = time.time()
-            if nav.get_frame() == 0:
+            if not nav.get_frame():
                 continue
-
-            nav.do_object_detection()
-            nav.detect_n_show()
-            nav.give_cmd(arduino)
-
+            if nav.running:
+                nav.do_object_detection()
+                nav.detect_n_show()
+                nav.give_cmd(arduino)
             key = nav.show_img()
             if key & 0xFF == ord('q') or key == 27:
                 print('Exited the program by pressing q')
                 break
             elif key & 0xFF == ord('a'):
-                nav.reset_stop()
                 print('Again, start getting command')
+                nav.reset_stop()
+            elif key & 0xFF == ord('p'):
+                print('Pause the algorithm')
+                nav.pause()
+            elif key & 0xFF == ord('r'):
+                print('Resume the algorithm')
+                nav.resume()
 
             print("FPS: ", 1 / (time.time() - start_time))
 
