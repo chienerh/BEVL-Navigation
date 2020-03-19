@@ -40,6 +40,10 @@ If you want to run RealSense + Door algorithm + Arduino Motor Feedback,
 ```
 sudo python3 arduino_door.py
 ```
+If you want to run RealSense + Door algorithm + Arduino Motor Feedback without forward command and use argus feedback instead,
+```
+sudo python3 rs_arduino_door.py
+```
 
 ## Result
 ### Speed
