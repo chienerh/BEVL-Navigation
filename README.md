@@ -19,9 +19,6 @@ pip install -r requirements.txt
 ### pysot and pytorch-ssd packages set up
 ```
 cp -r pytorch-ssd/vision ../../anaconda3/envs/door/lib/python3.6/site-packages/vision
-cd pysot
-python setup.py build_ext --inplace
-cd ..
 ```
 ### librealsense set up
 See [RealSense/librealsense page](https://github.com/IntelRealSense/librealsense/tree/master/wrappers/python).
