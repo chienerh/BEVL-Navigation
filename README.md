@@ -3,6 +3,19 @@
 ## Introduction
 This repository is using [Intel RealSense D435i](https://www.intelrealsense.com/depth-camera-d435i/) as a RGBD camera. The camera is mounted on a head strap that can be worn on the head. This repository combines object detecting algorithm [qfgaohao/pytorch-ssd](https://github.com/qfgaohao/pytorch-ssd) and object tracking algorithm [STVIR/pysot](https://github.com/STVIR/pysot) to detect doors and keep tracking it. Optionally, an Arduino Motor system can provide feedback with "Forward", "Left", "Right", and "Stop" commands to subjects.
 
+## Publication
+We published the study using this repository in EMBC 2022. [Paper Link](https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9871117)
+```
+@inproceedings{jeganathan2022integration,
+  title={Integration of artificial vision with non-visual peripheral cues to guide mobility},
+  author={Jeganathan, V Swetha E and Lin, Chien Erh and Son, Hojun and Krishnagiri, Divya S and Wei, Yumou and Weiland, James D},
+  booktitle={2022 44th Annual International Conference of the IEEE Engineering in Medicine \& Biology Society (EMBC)},
+  pages={5136--5139},
+  year={2022},
+  organization={IEEE}
+}
+```
+
 ## install and build
 ```
 git clone --recursive https://github.com/chienerh/BEVL-Navigation.git
